@@ -1,0 +1,74 @@
+# ── JupyterHub Helm values snippet ──────────────────────────────────────
+#
+# MINIMAL setup: add this to your z2jh values.yaml to enable storage quota
+# monitoring, culling, dashboard, and cleanup portal.
+#
+# Only JSU_CLEANUP_IMAGE is required — everything else has sensible defaults.
+#
+# Prerequisites:
+#   1. pip install jupyterhub-storage-usage  (in the hub image)
+#   2. pip install jupyter-storage-usage     (in the singleuser image)
+#   3. Build a cleanup image (see README.md for Dockerfile)
+
+hub:
+  services:
+    storage-usage:
+      url: http://0.0.0.0:9099
+      command:
+        - python
+        - -m
+        - jupyterhub_storage_usage
+      # Admin API token (JupyterHub auto-generates one if omitted, but
+      # setting it explicitly makes the poller/culler work reliably).
+      api_token: "set-a-random-secret-here"
+      environment:
+        # ── REQUIRED ──
+        JSU_CLEANUP_IMAGE: "registry.example.com/cleanup:0.1"
+
+        # ── OPTIONAL (these are the defaults) ──
+        # JSU_WARN_LIMIT_BYTES: "10Gi"       # soft limit
+        # JSU_HARD_LIMIT_BYTES: "20Gi"       # hard limit
+        # JSU_GRACE_PERIOD_SEC: "300"        # 5 min before cull
+        # JSU_POLL_INTERVAL_SEC: "600"       # 10 min poll cycle
+        # JSU_CULL_ON_HARD_LIMIT: "1"
+        # JSU_ADMIN_CAN_SPAWN_OVER_LIMIT: "1"
+        # JSU_EXCLUDE_USERS: "grader,service-account"
+        # JSU_CACHE_DB_PATH: "/srv/jupyterhub/storage-usage.db"
+        # JSU_PORT: "9099"
+
+  extraConfig:
+    storage-quota: |
+      # One-line setup — registers the pre-spawn hook
+      from jupyterhub_storage_usage import setup_storage_quota
+      setup_storage_quota(c)
+
+# ── Optional: per-user/group limit overrides ──
+# Create a ConfigMap:
+#   kubectl create configmap storage-limits-overrides \
+#     --from-file=limits-overrides.json=/path/to/limits.json
+#
+# Then add:
+#
+# hub:
+#   extraVolumes:
+#     - name: storage-limits
+#       configMap:
+#         name: storage-limits-overrides
+#   extraVolumeMounts:
+#     - name: storage-limits
+#       mountPath: /etc/jupyter-storage-usage
+#   services:
+#     storage-usage:
+#       environment:
+#         JSU_LIMIT_OVERRIDES_PATH: "/etc/jupyter-storage-usage/limits-overrides.json"
+#
+# limits-overrides.json format:
+# {
+#   "users": {
+#     "instructor1": {"warn": "50Gi", "hard": "100Gi"}
+#   },
+#   "groups": {
+#     "project": {"warn": "20Gi", "hard": "50Gi"}
+#   }
+# }
+# Resolution: user > group > global default
